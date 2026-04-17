@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>정보과 세특 생성기 V10 (디자인 복원 및 API 수정)</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=Black+Han+Sans&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #f8f9fa; --surface: #ffffff; --sidebar-bg: #1e293b; --border: #e2e8f0;
+    --accent: #3b82f6; --accent-soft: #dbeafe; --text: #1e293b; --text-muted: #64748b;
+    --success: #10b981; --warn: #f59e0b; --danger: #ef4444; --purple: #8b5cf6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Noto Sans KR', sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  
+  /* ── Header ── */
+  header { background: #ffffff; border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; z-index: 10; }
+  .logo { font-family: 'Black Han Sans', sans-serif; font-size: 20px; color: var(--accent); cursor: pointer; user-select: none; }
+  .logo span { color: var(--text); }
+
+  .app-container { display: flex; flex: 1; overflow: hidden; }
+
+  /* ── Sidebar ── */
+  .sidebar { width: 280px; background: var(--sidebar-bg); color: white; display: flex; flex-direction: column; padding: 20px 12px; flex-shrink: 0; }
+  .class-selector select { width: 100%; padding: 10px; border-radius: 8px; background: #334155; color: white; border: none; font-family: inherit; outline: none; margin-bottom: 20px; }
+  .student-list-wrap { flex: 1; overflow-y: auto; }
+  .student-item { padding: 12px 16px; margin-bottom: 4px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; font-size: 14px; transition: background 0.2s;}
+  .student-item:hover { background: #334155; }
+  .student-item.active { background: var(--accent); color: white; }
+  .status-icon { font-size: 12px; opacity: 0.5; }
+  .student-item.done .status-icon { opacity: 1; color: var(--success); }
+
+  /* ── Main Content ── */
+  .main-content { flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding: 24px; gap: 24px; padding-bottom: 280px; }
+  .eval-section { background: var(--surface); border-radius: 12px; border: 1px solid var(--border); padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+  .section-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+  .rubric-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+  .rubric-card { border: 1.5px solid var(--border); border-radius: 10px; padding: 12px; cursor: pointer; font-size: 13.5px; line-height: 1.4; background: #fff; display: flex; align-items: center; gap: 10px; transition: all 0.2s;}
+  .rubric-card:hover { border-color: var(--accent); background: var(--bg); }
+  .rubric-card.selected { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+  .check-circle { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border); flex-shrink: 0; }
+  .rubric-card.selected .check-circle { background: var(--accent); border-color: var(--accent); }
+
+  /* ── Result & Keyword Area ── */
+  .result-area { position: fixed; bottom: 0; right: 0; width: calc(100% - 280px); background: #fff; border-top: 3px solid var(--accent); padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 -10px 25px rgba(0,0,0,0.1); z-index: 20; }
+  .keyword-input-wrap { display: flex; align-items: center; gap: 12px; background: var(--bg); padding: 10px 16px; border-radius: 8px; border: 1px solid var(--border); }
+  .keyword-input-wrap input { flex: 1; border: none; background: transparent; font-size: 14px; outline: none; }
+  
+  .result-header { display: flex; justify-content: space-between; align-items: center; }
+  .result-text-label { font-size: 15px; font-weight: 700; color: var(--accent); }
+  #generatedText { width: 100%; height: 110px; border: 1px solid var(--border); border-radius: 8px; padding: 16px; font-size: 14px; line-height: 1.8; background: var(--bg); color: var(--text); resize: none; outline: none; }
+  #generatedText.loading { animation: pulse 1.5s infinite; color: #94a3b8; }
+  @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+
+  /* ── Buttons ── */
+  .btn { padding: 8px 16px; border-radius: 8px; border: none; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; transition: all 0.2s;}
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-success { background: var(--success); color: white; }
+  .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+  .btn-warn { background: var(--warn); color: white; }
+  .btn-purple { background: var(--purple); color: white; font-weight: 700; }
+  .btn-purple:hover { background: #7c3aed; box-shadow: 0 4px 12px rgba(139,92,246,0.3); }
+
+  /* ── Admin Panel ── */
+  .admin-only { display: none !important; }
+  body.admin-mode .admin-only { display: inline-flex !important; }
+  .admin-panel { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.85); z-index: 100; display: none; align-items: center; justify-content: center; padding: 20px; }
+  .admin-content { background: #f8f9fa; width: 100%; max-width: 800px; max-height: 90vh; border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2); }
+  .admin-header { padding: 20px 24px; background: white; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .admin-body { padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; }
+  .admin-section { background: white; padding: 20px; border-radius: 12px; border: 1px solid var(--border); }
+  textarea#adminNameInput { width: 100%; height: 100px; padding: 12px; border-radius: 8px; border: 1px solid var(--border); outline: none; }
+  .edit-category { border: 1px solid var(--border); border-radius: 8px; padding: 15px; margin-bottom: 15px; background: var(--bg); }
+
+  @media (max-width: 900px) {
+    .sidebar { width: 80px; padding: 10px 5px; }
+    .sidebar span, .class-selector, .status-icon { display: none; }
+    .result-area { width: calc(100% - 80px); padding: 15px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo" id="logo" title="3번 클릭 시 관리자 모드 진입">세특<span>생성기</span> <small style="font-size: 10px; opacity: 0.4;">V10</small></div>
+  <div class="header-actions">
+    <button class="btn btn-outline admin-only" id="exportBtn">📊 엑셀 다운로드</button>
+    <button class="btn btn-warn admin-only" id="exitAdminBtn" style="margin-left: 8px;">🚪 설정 닫기</button>
+    <span id="activeStudentInfo" style="font-size: 14px; font-weight: 500; margin-left: 15px; color: var(--text-muted);">학생을 선택하세요</span>
+  </div>
+</header>
+
+<div class="app-container">
+  <aside class="sidebar">
+    <div class="class-selector">
+      <select id="classSelect">
+        <option value="1">1학년 1반</option><option value="2">1학년 2반</option><option value="3">1학년 3반</option>
+      </select>
+    </div>
+    <div class="student-list-wrap" id="studentList"></div>
+  </aside>
+
+  <main class="main-content" id="mainContent"></main>
+
+  <div class="result-area">
+    <div class="keyword-input-wrap">
+      <span style="font-size:16px;">📌</span>
+      <input type="text" id="studentKeyword" placeholder="이 학생만의 개별 특징 (예: '보고서의 논리 구조가 탄탄함', '모둠 활동 시 조원들을 배려함')">
+    </div>
+    <div class="result-header">
+      <div class="result-text-label">NEIS 세특 생성 문구 미리보기</div>
+      <div class="action-buttons">
+        <button class="btn btn-purple" id="aiGenerateBtn">🤖 AI 자동 창작</button>
+        <button class="btn btn-primary" id="copyBtn">📋 복사</button>
+        <button class="btn btn-success" id="saveBtn">💾 저장</button>
+      </div>
+    </div>
+    <textarea id="generatedText" spellcheck="false" placeholder="항목 체크 후 AI 자동 창작을 누르세요."></textarea>
+  </div>
+</div>
+
+<div class="admin-panel" id="adminPanel">
+  <div class="admin-content">
+    <div class="admin-header">
+      <h2>⚙️ 관리자 설정</h2>
+      <div>
+        <button class="btn btn-primary" id="adminSaveAllBtn">💾 모든 변경사항 저장</button>
+        <button class="btn btn-outline" id="adminCloseBtn">닫기</button>
+      </div>
+    </div>
+    <div class="admin-body">
+      <div class="admin-section" style="background:#fff9c4;">
+        <strong>🔑 Google Gemini API Key</strong>
+        <input type="password" id="apiKeyInput" style="width:100%; padding:10px; margin-top:8px; border-radius:6px; border:1px solid #fbc02d;" placeholder="AIzaSy... 형식의 키를 입력">
+      </div>
+      <div class="admin-section">
+        <h3>1. 학생 명단 관리 (<span id="targetClassLabel"></span>반)</h3>
+        <input type="file" id="excelUpload" accept=".xlsx, .xls, .csv" style="margin:10px 0;">
+        <textarea id="adminNameInput" placeholder="이름을 줄바꿈으로 구분해 입력"></textarea>
+      </div>
+      <div class="admin-section">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <h3>2. 평가 주제 설정</h3>
+          <button class="btn btn-success btn-sm" onclick="addCategory()">+ 주제 추가</button>
+        </div>
+        <div id="rubricEditorContainer"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── 데이터 상태 ──
+  let studentsData = {}; let rubricData = []; let currentClass = "1"; let activeStudentIdx = null; let geminiApiKey = "";
+
+  const defaultRubrics = [
+    { title: "개념 이해", items: [{label: "변수와 조건문의 원리 이해"}, {label: "알고리즘 설계 능력 우수"}] },
+    { title: "문제 해결 및 실습", items: [{label: "스스로 오류를 분석하고 디버깅함"}, {label: "창의적인 기능 추가"}] },
+    { title: "태도 및 소양", items: [{label: "수업 집중도가 높고 끈기 있음"}, {label: "정보 윤리를 준수함"}] }
+  ];
+
+  // ── 초기화 ──
+  window.addEventListener('DOMContentLoaded', () => {
+    const savedStudents = localStorage.getItem('eval_v10_students');
+    studentsData = savedStudents ? JSON.parse(savedStudents) : {"1":[], "2":[], "3":[]};
+    const savedRubrics = localStorage.getItem('eval_v10_rubrics');
+    rubricData = savedRubrics ? JSON.parse(savedRubrics) : JSON.parse(JSON.stringify(defaultRubrics));
+    geminiApiKey = localStorage.getItem('eval_v10_api') || "";
+    renderMainRubrics(); renderStudentList();
+  });
+
+  function renderMainRubrics() {
+    const main = document.getElementById('mainContent'); main.innerHTML = '';
+    rubricData.forEach((cat) => {
+      const sec = document.createElement('section'); sec.className = 'eval-section';
+      sec.innerHTML = `<div class="section-title">${cat.title}</div><div class="rubric-grid">` + 
+        cat.items.map(it => `<div class="rubric-card" data-label="${it.label}"><div class="check-circle"></div><div>${it.label}</div></div>`).join('') + `</div>`;
+      main.appendChild(sec);
+    });
+    document.querySelectorAll('.rubric-card').forEach(card => {
+      card.onclick = function() {
+        if (activeStudentIdx === null) return alert('학생을 먼저 선택하세요!');
+        const grid = this.closest('.rubric-grid');
+        const isSel = this.classList.contains('selected');
+        grid.querySelectorAll('.rubric-card').forEach(c => c.classList.remove('selected'));
+        if (!isSel) this.classList.add('selected');
+        saveState();
+      };
+    });
+  }
+
+  function renderStudentList() {
+    const list = document.getElementById('studentList'); list.innerHTML = '';
+    (studentsData[currentClass] || []).forEach((s, idx) => {
+      const item = document.createElement('div');
+      item.className = `student-item ${idx === activeStudentIdx ? 'active' : ''} ${s.done ? 'done' : ''}`;
+      item.innerHTML = `<span>${s.name}</span> <span class="status-icon">${s.done ? '✅' : '●'}</span>`;
+      item.onclick = () => selectStudent(idx);
+      list.appendChild(item);
+    });
+  }
+
+  function selectStudent(idx) {
+    activeStudentIdx = idx; const student = studentsData[currentClass][idx];
+    document.getElementById('activeStudentInfo').textContent = `${currentClass}반 ${student.name} 학생`;
+    document.getElementById('studentKeyword').value = student.keyword || "";
+    document.getElementById('generatedText').value = student.text || "";
+    document.querySelectorAll('.rubric-card').forEach(c => c.classList.toggle('selected', (student.eval || []).includes(c.dataset.label)));
+    renderStudentList();
+  }
+
+  function saveState() {
+    if (activeStudentIdx === null) return;
+    const sels = Array.from(document.querySelectorAll('.rubric-card.selected')).map(c => c.dataset.label);
+    studentsData[currentClass][activeStudentIdx].eval = sels;
+    studentsData[currentClass][activeStudentIdx].keyword = document.getElementById('studentKeyword').value;
+  }
+
+  // ── 핵심: Gemini AI 생성 (v1 정식 버전으로 수정) ──
+  document.getElementById('aiGenerateBtn').onclick = async () => {
+    if (activeStudentIdx === null) return alert('학생을 먼저 선택하세요.');
+    if (!geminiApiKey) return alert('관리자 모드에서 API 키를 먼저 입력해주세요.');
+    saveState();
+    const sels = studentsData[currentClass][activeStudentIdx].eval || [];
+    if (sels.length === 0) return alert('항목을 체크해주세요.');
+
+    const keyword = document.getElementById('studentKeyword').value.trim();
+    const prompt = `너는 중학교 정보교사야. 다음 항목으로 학생의 생활기록부 세특을 작성해줘.
+    항목: ${sels.join(', ')} / 개별특징: ${keyword || '없음'}.
+    조건: 2-3문장, '~함', '~임'으로 끝낼 것. 설명 제외 본문만 출력.`;
+
+    const area = document.getElementById('generatedText');
+    area.value = "AI가 작성 중입니다..."; area.classList.add('loading');
+
+    try {
+      // API 엔드포인트를 v1 정식 버전으로 변경하여 에러 수정
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      });
+
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error ? result.error.message : 'API 호출 실패');
+
+      const aiText = result.candidates[0].content.parts[0].text.trim();
+      area.value = aiText; area.classList.remove('loading');
+      studentsData[currentClass][activeStudentIdx].text = aiText;
+    } catch (e) {
+      area.classList.remove('loading');
+      area.value = "⚠️ 오류 발생: " + e.message;
+    }
+  };
+
+  // ── 저장 및 파일 처리 ──
+  document.getElementById('saveBtn').onclick = () => { if(activeStudentIdx!==null){ saveState(); studentsData[currentClass][activeStudentIdx].text = document.getElementById('generatedText').value; studentsData[currentClass][activeStudentIdx].done=true; saveToLocal(); renderStudentList(); alert('저장 완료!'); } };
+  document.getElementById('copyBtn').onclick = () => { const t = document.getElementById('generatedText').value; if(t) { navigator.clipboard.writeText(t); alert('복사되었습니다.'); } };
+  function saveToLocal() { localStorage.setItem('eval_v10_students', JSON.stringify(studentsData)); localStorage.setItem('eval_v10_rubrics', JSON.stringify(rubricData)); localStorage.setItem('eval_v10_api', geminiApiKey); }
+  document.getElementById('classSelect').onchange = function() { currentClass = this.value; activeStudentIdx = null; renderStudentList(); };
+  document.getElementById('exportBtn').onclick = () => {
+    let csv = "\uFEFF학년반,이름,특징,세부능력 및 특기사항\n";
+    for (let c in studentsData) studentsData[c].forEach(s => { csv += `${c}반,${s.name},${s.keyword||''},"${(s.text||'').replace(/"/g,'""')}"\n`; });
+    const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'})); link.download = `세특_결과.csv`; link.click();
+  };
+
+  // ── 관리자 로직 ──
+  let clicks = 0;
+  document.getElementById('logo').onclick = () => { clicks++; if(clicks>=3){ openAdmin(); clicks=0; } setTimeout(()=>clicks=0, 1000); };
+  function openAdmin() {
+    document.getElementById('adminPanel').style.display = 'flex';
+    document.getElementById('targetClassLabel').textContent = currentClass;
+    document.getElementById('adminNameInput').value = (studentsData[currentClass]||[]).map(s=>s.name).join('\n');
+    document.getElementById('apiKeyInput').value = geminiApiKey;
+    renderRubricEditor();
+  }
+  document.getElementById('adminCloseBtn').onclick = () => document.getElementById('adminPanel').style.display = 'none';
+  document.getElementById('exitAdminBtn').onclick = () => document.body.classList.remove('admin-mode');
+  document.getElementById('adminSaveAllBtn').onclick = () => {
+    geminiApiKey = document.getElementById('apiKeyInput').value.trim();
+    const names = document.getElementById('adminNameInput').value.split('\n').map(n=>n.trim()).filter(Boolean);
+    studentsData[currentClass] = names.map(n => (studentsData[currentClass].find(ex=>ex.name===n) || {name:n, eval:[], text:"", keyword:"", done:false}));
+    const newRubrics = [];
+    document.querySelectorAll('.edit-category').forEach(cat => {
+      const title = cat.querySelector('.cat-title').value.trim();
+      const items = Array.from(cat.querySelectorAll('.item-label')).map(i=>({label:i.value.trim()})).filter(i=>i.label);
+      if(title) newRubrics.push({title, items});
+    });
+    rubricData = newRubrics; saveToLocal(); renderMainRubrics(); renderStudentList();
+    alert('설정이 저장되었습니다.'); document.getElementById('adminPanel').style.display = 'none';
+  };
+
+  function renderRubricEditor() {
+    const cont = document.getElementById('rubricEditorContainer'); cont.innerHTML = '';
+    rubricData.forEach(cat => {
+      const div = document.createElement('div'); div.className = 'edit-category';
+      div.innerHTML = `<input type="text" class="cat-title" value="${cat.title}" style="font-weight:bold; width:70%; padding:5px;"> <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">삭제</button>` + 
+        `<div class="item-list" style="margin-top:10px;">` + 
+        cat.items.map(it => `<div style="display:flex; gap:5px; margin-bottom:5px;"><input type="text" class="item-label" value="${it.label}" style="flex:1; padding:5px;"> <button onclick="this.parentElement.remove()">X</button></div>`).join('') + 
+        `</div><button class="btn btn-outline btn-sm" onclick="addItem(this)">+ 항목 추가</button>`;
+      cont.appendChild(div);
+    });
+  }
+  window.addItem = (btn) => { const div = document.createElement('div'); div.style="display:flex; gap:5px; margin-bottom:5px;"; div.innerHTML=`<input type="text" class="item-label" placeholder="항목명" style="flex:1; padding:5px;"> <button onclick="this.parentElement.remove()">X</button>`; btn.previousElementSibling.appendChild(div); };
+  window.addCategory = () => { const div = document.createElement('div'); div.className='edit-category'; div.innerHTML=`<input type="text" class="cat-title" placeholder="주제명" style="font-weight:bold; width:70%; padding:5px;"> <button onclick="this.parentElement.remove()">삭제</button><div class="item-list" style="margin-top:10px;"></div><button onclick="addItem(this)">+ 항목 추가</button>`; document.getElementById('rubricEditorContainer').appendChild(div); };
+</script>
+</body>
+</html>
